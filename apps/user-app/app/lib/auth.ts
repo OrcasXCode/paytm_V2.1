@@ -1,66 +1,91 @@
-import db from "@repo/db/client";
-import CredentialsProvider from "next-auth/providers/credentials"
+import { PrismaClient } from "@repo/db/client";
+import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcrypt";
+import { NextAuthOptions, Session } from "next-auth";
+import { JWT } from "next-auth/jwt";
 
-export const authOptions = {
-    providers: [
-      CredentialsProvider({
-          name: 'Credentials',
-          credentials: {
-            phone: { label: "Phone number", type: "text", placeholder: "1231231231", required: true },
-            password: { label: "Password", type: "password", required: true }
-          },
-          // TODO: User credentials type from next-aut
-          async authorize(credentials: any) {
-            // Do zod validation, OTP validation here
-            const hashedPassword = await bcrypt.hash(credentials.password, 10);
-            const existingUser = await db.user.findFirst({
-                where: {
-                    number: credentials.phone
-                }
-            });
+const db = new PrismaClient();
 
-            if (existingUser) {
-                const passwordValidation = await bcrypt.compare(credentials.password, existingUser.password);
-                if (passwordValidation) {
-                    return {
-                        id: existingUser.id.toString(),
-                        name: existingUser.name,
-                        email: existingUser.number
-                    }
-                }
-                return null;
-            }
+interface Credentials {
+  phone: string;
+  password: string;
+}
 
-            try {
-                const user = await db.user.create({
-                    data: {
-                        number: credentials.phone,
-                        password: hashedPassword
-                    }
-                });
-            
-                return {
-                    id: user.id.toString(),
-                    name: user.name,
-                    email: user.number
-                }
-            } catch(e) {
-                console.error(e);
-            }
+interface ExtendedUser {
+  id: string;
+  name?: string | null;
+  email?: string | null;
+  image?: string | null;
+}
 
-            return null
-          },
-        })
-    ],
-    secret: process.env.JWT_SECRET || "secret",
-    callbacks: {
-        // TODO: can u fix the type here? Using any is bad
-        async session({ token, session }: any) {
-            session.user.id = token.sub
+interface ExtendedSession extends Session {
+  user: ExtendedUser;
+}
 
-            return session
+export const authOptions: NextAuthOptions = {
+  providers: [
+    CredentialsProvider({
+      name: 'Credentials',
+      credentials: {
+        phone: { label: "Phone number", type: "text", placeholder: "1231231231", required: true },
+        password: { label: "Password", type: "password", required: true },
+      },
+      async authorize(credentials, req) {
+        if (!credentials) {
+          throw new Error("No credentials provided");
         }
-    }
-  }
-  
+
+        const { phone, password } = credentials;
+
+        const existingUser = await db.user.findFirst({
+          where: {
+            number: phone,
+          },
+        });
+
+        if (existingUser) {
+          const passwordValidation = await bcrypt.compare(password, existingUser.password);
+          if (passwordValidation) {
+            return {
+              id: existingUser.id.toString(),
+              name: existingUser.name,
+              email: existingUser.number,
+            };
+          }
+          throw new Error("Invalid password");
+        }
+
+        const hashedPassword = await bcrypt.hash(password, 10);
+
+        try {
+          const user = await db.user.create({
+            data: {
+              number: phone,
+              password: hashedPassword,
+            },
+          });
+
+          return {
+            id: user.id.toString(),
+            name: user.name,
+            email: user.number,
+          };
+        } catch (e) {
+          console.error(e);
+          throw new Error("User creation failed");
+        }
+      },
+    }),
+  ],
+  secret: process.env.JWT_SECRET || "secret",
+  callbacks: {
+    async session({ session, token }: { session: Session; token: JWT }) {
+      if (session.user) {
+        (session.user as ExtendedUser).id = token.sub!;
+      } else {
+        session.user = { id: token.sub!, name: token.name, email: token.email, image: token.picture } as ExtendedUser;
+      }
+      return session as ExtendedSession;
+    },
+  },
+};
