@@ -1,3 +1,5 @@
+import React from 'react';
+
 export function Card({
   className,
   title,
@@ -10,16 +12,17 @@ export function Card({
   href: string;
 }): JSX.Element {
   return (
-    <a
-      className={className}
-      href={`${href}?utm_source=create-turbo&utm_medium=basic&utm_campaign=create-turbo"`}
-      rel="noopener noreferrer"
-      target="_blank"
-    >
-      <h2 className="text-sm">
-        {title} <span>-&gt;</span>
-      </h2>
+    <div className={className}>
+      <a
+        href={`${href}?utm_source=create-turbo&utm_medium=basic&utm_campaign=create-turbo`}
+        rel="noopener noreferrer"
+        target="_blank"
+      >
+        <h2 className="text-sm">
+          {title} <span>-&gt;</span>
+        </h2>
+      </a>
       <p>{children}</p>
-    </a>
+    </div>
   );
 }
